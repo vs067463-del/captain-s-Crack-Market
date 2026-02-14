@@ -1,0 +1,5 @@
+{
+    "name": "Video Downloader",
+    "description": "Download videos from YouTube, Rutube, and others directly to the server.",
+    "icon": "icon.png"
+}
