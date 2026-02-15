@@ -36,13 +36,48 @@ try {
     $root = dirname(dirname(dirname(__FILE__)));
     $binPath = $root . '\bin\yt-dlp.exe';
     $ffmpegPath = $root . '\bin\ffmpeg.exe';
-    // Use physical path E:\ftp as requested by user
-    // Subfolder VideoDownloads to keep it clean
-    $downloadDir = 'E:\ftp\VideoDownloads';
+
+    // Helper to get physical root from fs.ashx
+    function get_fs_physical_root()
+    {
+        // Try localhost loopback
+        $url = "http://localhost/modules/file-manager/api/fs.ashx?action=ping";
+
+        // Use stream context to force short timeout
+        $ctx = stream_context_create(['http' => ['timeout' => 2]]);
+        $json = @file_get_contents($url, false, $ctx);
+
+        if ($json) {
+            $data = json_decode($json, true);
+            if (isset($data['root']) && is_dir($data['root'])) {
+                return $data['root'];
+            }
+        }
+        return false;
+    }
+
+    // Determine download directory
+    $fsRoot = get_fs_physical_root();
+
+    // Fallback if fs.ashx is unreachable:
+    // Try standard locations (files folder relative to root)
+    if (!$fsRoot) {
+        // Default fallback: ../../../ftp if it exists, or just use a local 'downloads' folder
+        $potential = $root . '\ftp';
+        if (is_dir($potential)) {
+            $fsRoot = $potential;
+        } else {
+            // Absolute worst case: use system temp or module dir (not recommended for persistence)
+            $fsRoot = sys_get_temp_dir();
+        }
+    }
+
+    $downloadDir = $fsRoot . '\VideoDownloads';
 
     if (!file_exists($binPath))
         send_error('yt-dlp binary not found', $binPath);
 
+    // Ensure directory exists (recursive)
     if (!file_exists($downloadDir)) {
         if (!mkdir($downloadDir, 0777, true))
             send_error('Failed to create download directory', $downloadDir);
