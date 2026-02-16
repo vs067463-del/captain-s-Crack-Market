@@ -1,0 +1,8 @@
+{
+    "name": "Batch Renamer",
+    "description": "Rename multiple files at once using patterns.",
+    "entryPoint": "index.html",
+    "icon": "icon.png",
+    "width": 800,
+    "height": 600
+}

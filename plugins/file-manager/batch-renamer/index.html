@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Batch Renamer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="./styles.css">
+  <style>html,body{height:100%;margin:0;}</style>
+</head>
+<body>
+  <div id="app" class="br-root" data-app-slug="batch-renamer" data-app-title="Batch Renamer">
+    <div class="br-body">
+      <section class="panel left">
+        <div class="row top-row">
+          <label class="lab">Root:</label>
+          <input class="inp" data-id="root" placeholder="/ftp/" spellcheck="false">
+        </div>
+        <div class="row">
+          <label class="lab">Path:</label>
+          <input class="inp" data-id="path" placeholder="/" spellcheck="false">
+          <button class="btn" data-act="load" title="Загрузить текущий путь">Загрузить</button>
+          <button class="btn" data-act="up" title="Вверх (parent)">↑</button>
+        </div>
+        <div class="row subtle">
+          Режимы: 1) по папке (Root+Path), 2) явный список элементов через ?items=[...]
+        </div>
+
+        <div class="rules">
+          <div class="r-title">Правила</div>
+          <div class="grid">
+            <label>Find:</label>
+            <input class="inp" data-id="find" placeholder="строка или regex">
+            <label>Replace:</label>
+            <input class="inp" data-id="repl" placeholder="замена">
+            <label></label>
+            <div>
+              <label><input type="checkbox" data-id="rx"> Regex</label>
+              <label><input type="checkbox" data-id="cs"> Case sensitive</label>
+              <label><input type="checkbox" data-id="nameOnly" checked> Только имя</label>
+            </div>
+            <label>Регистр:</label>
+            <div>
+              <label><input type="radio" name="case" value="none" checked> без изм.</label>
+              <label><input type="radio" name="case" value="lower"> lower</label>
+              <label><input type="radio" name="case" value="upper"> UPPER</label>
+              <label><input type="radio" name="case" value="title"> Title Case</label>
+            </div>
+            <label>Пробелы:</label>
+            <div>
+              <label><input type="checkbox" data-id="trim"> trim</label>
+              <label><input type="checkbox" data-id="collapse"> множественные→1</label>
+              <label><input type="checkbox" data-id="spacesTo"> пробелы → <select data-id="spaceChar"><option value=" ">пробел</option><option value="_">_</option><option value="-">-</option></select></label>
+            </div>
+            <label>Транслит:</label>
+            <div><label><input type="checkbox" data-id="translit"> ru→lat</label></div>
+            <label>Prefix:</label>
+            <input class="inp" data-id="prefix" placeholder="IMG_ или {n}-">
+            <label>Suffix:</label>
+            <input class="inp" data-id="suffix" placeholder="_final или -{n}">
+            <label>Нумерация:</label>
+            <div>
+              <label><input type="checkbox" data-id="useNum"> вкл.</label>
+              <label>start <input class="inp n" data-id="numStart" type="number" value="1"></label>
+              <label>step <input class="inp n" data-id="numStep" type="number" value="1"></label>
+              <label>pad <input class="inp n" data-id="numPad" type="number" value="2"></label>
+              <label>порядок <select data-id="numOrder"><option value="name">по имени</option><option value="current">как есть</option></select></label>
+            </div>
+            <label>Расш.:</label>
+            <div>
+              <label><input type="radio" name="extMode" value="keep" checked> оставить</label>
+              <label><input type="radio" name="extMode" value="set"> заменить на</label>
+              <input class="inp" data-id="extNew" placeholder="jpg, txt..." style="width:110px;">
+            </div>
+          </div>
+          <div class="r-ops">
+            <button class="btn" data-act="preview">Предпросмотр</button>
+            <button class="btn primary" data-act="apply">Применить</button>
+            <span class="info" data-id="summary"></span>
+          </div>
+        </div>
+      </section>
+
+      <div class="br-split"></div>
+
+      <section class="panel right">
+        <div class="table-head">
+          <div class="c c0"><input type="checkbox" data-id="chk-all" title="Выделить все"></div>
+          <div class="c c1">Type</div>
+          <div class="c c2">Old name</div>
+          <div class="c c3">New name (preview)</div>
+          <div class="c c4">Status</div>
+        </div>
+        <div class="table-body" data-id="tbody"></div>
+      </section>
+    </div>
+
+    <div class="br-status">
+      <div data-id="status">Готово.</div>
+      <div class="progress" hidden data-id="prog-wrap"><div class="bar" data-id="prog"></div></div>
+    </div>
+  </div>
+  <script src="./app.js" defer></script>
+</body>
+</html>
