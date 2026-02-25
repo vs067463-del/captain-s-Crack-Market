@@ -1,5 +1,6 @@
 {
     "name": "Duplicate Finder",
+	"description": "Finder multiple files at once using patterns.",
     "entryPoint": "index.html",
     "icon": "icon.png",
     "width": 600,
