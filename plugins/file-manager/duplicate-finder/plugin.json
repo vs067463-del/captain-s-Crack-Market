@@ -1,0 +1,7 @@
+{
+    "name": "Duplicate Finder",
+    "entryPoint": "index.html",
+    "icon": "icon.png",
+    "width": 600,
+    "height": 500
+}

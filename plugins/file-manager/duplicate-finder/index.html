@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Duplicate Finder</title>
+    <link rel="stylesheet" href="../../../../../assets/xp/xp-ui.css">
+    <style>
+        body {
+            font-family: 'Tahoma', sans-serif;
+            background-color: #ECE9D8;
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+            font-size: 11px;
+        }
+
+        .controls {
+            padding: 10px;
+            background: #fff;
+            border: 1px solid #7F9DB9;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .path-display {
+            flex: 1;
+            padding: 4px;
+            border: 1px solid #7F9DB9;
+            background: #f9f9f9;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .results {
+            flex: 1;
+            border: 1px solid #7F9DB9;
+            background: #fff;
+            overflow: auto;
+            padding: 5px;
+        }
+
+        .group {
+            border: 1px solid #ccc;
+            margin-bottom: 8px;
+            background: #f0f0f0;
+        }
+
+        .group-header {
+            padding: 5px;
+            background: #d4d0c8;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .file-item {
+            padding: 4px 5px;
+            border-top: 1px solid #fff;
+            display: flex;
+            align-items: center;
+            background: #fff;
+        }
+
+        .file-item:hover {
+            background-color: #eef;
+        }
+
+        .file-path {
+            flex: 1;
+            margin-left: 8px;
+            color: #333;
+        }
+
+        .file-meta {
+            color: #888;
+            width: 120px;
+            text-align: right;
+        }
+
+        button {
+            padding: 4px 12px;
+            cursor: pointer;
+        }
+
+        .status-bar {
+            margin-top: 5px;
+            color: #666;
+        }
+
+        .small-btn {
+            padding: 2px 6px;
+            font-size: 10px;
+        }
+
+        .scanning {
+            animation: pulse 1.5s infinite;
+            color: #000080;
+            font-weight: bold;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 0.6;
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.6;
+            }
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+        }
+
+        .modal-overlay.hidden {
+            display: none;
+        }
+
+        .modal-box {
+            background: #ECE9D8;
+            border: 2px solid #0055EA;
+            width: 300px;
+            box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.5);
+            font-family: 'Tahoma', sans-serif;
+        }
+
+        .modal-header {
+            background: linear-gradient(to right, #0055EA, #3086FF);
+            color: #fff;
+            padding: 4px 8px;
+            font-weight: bold;
+        }
+
+        .modal-body {
+            padding: 15px;
+            font-size: 12px;
+            background: #fff;
+            border: 1px solid #7F9DB9;
+            margin: 4px;
+        }
+
+        .modal-footer {
+            padding: 8px;
+            text-align: right;
+            display: flex;
+            justify-content: flex-end;
+            gap: 5px;
+        }
+
+        /* Preview Styles */
+        .img-preview {
+            max-width: 100px;
+            max-height: 80px;
+            border: 1px solid #ccc;
+            padding: 2px;
+            background: #fff;
+            margin-right: 10px;
+            display: block;
+        }
+
+        .file-item.with-preview {
+            height: auto;
+            align-items: flex-start;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="controls">
+        <span>Path:</span>
+        <div class="path-display" id="pathDisplay">/</div>
+        <select id="fileFilter">
+            <option value="">All Files (*.*)</option>
+            <option value="jpg,jpeg,png,gif,bmp,webp,svg,ico">Images</option>
+            <option value="mp4,mkv,avi,mov,webm,ogv">Videos</option>
+            <option value="mp3,wav,ogg,flac,m4a">Audio</option>
+            <option value="txt,md,doc,docx,pdf,rtf,odt">Documents</option>
+            <option value="exe,msi,bat,cmd,ps1">Executables</option>
+            <option value="zip,rar,7z,tar,gz">Archives</option>
+        </select>
+        <button onclick="startScan()" id="btnScan">Start Scan</button>
+    </div>
+
+    <div class="controls" style="margin-top:-5px; border-top:0; justify-content: space-between;">
+        <span id="groupControls">
+            <button onclick="toggleAll(false)" class="small-btn">Uncheck All</button>
+            <button onclick="toggleAll(true)" class="small-btn">Check All</button>
+            <button onclick="invertSelection()" class="small-btn">Invert</button>
+        </span>
+        <span>
+            <label style="cursor:pointer; display:flex; align-items:center; gap:4px">
+                <input type="checkbox" id="chkPreview" onchange="renderCached()">
+                Preview Images
+            </label>
+        </span>
+        <button onclick="confirmDelete()" id="btnDelete" disabled>Delete Selected</button>
+    </div>
+
+    <div class="results" id="results">
+        <div style="padding:20px; text-align:center; color:#888;">
+            Select a filter (optional) and click "Start Scan".
+        </div>
+    </div>
+
+    <div class="status-bar" id="statusBar">Ready</div>
+
+    <!-- Custom Modal -->
+    <div id="customModal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">Confirm Deletion</div>
+            <div class="modal-body" id="modalMsg">Are you sure?</div>
+            <div class="modal-footer">
+                <button onclick="closeModal(false)">Cancel</button>
+                <button onclick="closeModal(true)" style="font-weight:bold;">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/modules/file-manager/api/fs.ashx';
+        const params = new URLSearchParams(location.search);
+        let currentPath = params.get('path') || '/';
+        let lastResults = []; // Cache for re-rendering
+
+        document.getElementById('pathDisplay').textContent = currentPath;
+        document.getElementById('pathDisplay').title = currentPath;
+
+        const elStatus = document.getElementById('statusBar');
+
+        function setStatus(msg, isScanning) {
+            elStatus.textContent = msg;
+            if (isScanning) elStatus.classList.add('scanning');
+            else elStatus.classList.remove('scanning');
+        }
+
+        async function startScan() {
+            const btn = document.getElementById('btnScan');
+            const resDiv = document.getElementById('results');
+            const filter = document.getElementById('fileFilter').value;
+
+            btn.disabled = true;
+            resDiv.innerHTML = '<div style="padding:40px; text-align:center;"><div class="xp-icon-search scanning" style="font-size:32px; margin-bottom:10px;">🔍</div><br>Scanning files...<br><span style="font-size:10px; color:#666">Comparison in progress. Large folders may take time.</span></div>';
+            setStatus('Scanning directory structure...', true);
+
+            const fd = new FormData();
+            fd.append('action', 'scan-duplicates');
+            fd.append('path', currentPath);
+            if (filter) fd.append('extensions', filter);
+
+            try {
+                // Simulate phase
+                setTimeout(() => { if (btn.disabled) setStatus('Calculating hashes...', true); }, 2000);
+
+                const req = await fetch(API_URL, { method: 'POST', body: fd });
+                const res = await req.json();
+
+                if (!res.ok) throw new Error(res.error || 'Unknown error');
+
+                lastResults = res.items || [];
+                renderResults(lastResults);
+                setStatus(`Scan complete. Found ${res.count} groups.`, false);
+            } catch (e) {
+                resDiv.innerHTML = `<div style="color:red; padding:20px;">Error: ${e.message}</div>`;
+                setStatus('Error occurred.', false);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function renderCached() {
+            renderResults(lastResults);
+        }
+
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function isImage(path) {
+            const ext = path.split('.').pop().toLowerCase();
+            return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'ico', 'svg'].includes(ext);
+        }
+
+        function renderResults(groups) {
+            const container = document.getElementById('results');
+            const showPreview = document.getElementById('chkPreview').checked;
+            container.innerHTML = '';
+
+            if (groups.length === 0) {
+                container.innerHTML = '<div style="padding:20px; text-align:center;">No duplicates found!</div>';
+                return;
+            }
+
+            groups.forEach(group => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'group';
+
+                const header = document.createElement('div');
+                header.className = 'group-header';
+                const gid = 'g_' + group.hash;
+
+                header.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <input type="checkbox" onchange="toggleGroup(this)" data-group="${gid}">
+                        <span>Size: ${formatSize(group.size)} (Count: ${group.count})</span>
+                    </div>
+                    <span style="font-family:monospace; font-size:10px; color:#555">${group.hash.substring(0, 8)}</span>
+                `;
+                groupDiv.appendChild(header);
+
+                // Assuming files are pre-sorted or random order.
+                group.files.forEach((f, idx) => {
+                    const row = document.createElement('div');
+                    row.className = 'file-item ' + gid + (showPreview ? ' with-preview' : '');
+
+                    const isChecked = idx > 0;
+
+                    let previewHtml = '';
+                    if (showPreview && isImage(f.path)) {
+                        const src = '/ftp' + f.path;
+                        previewHtml = `<img src="${src}" class="img-preview" loading="lazy">`;
+                    }
+
+                    row.innerHTML = `
+                        <input type="checkbox" class="del-check ${gid}" value="${f.path}" ${isChecked ? 'checked' : ''} onchange="updateButtons()" style="margin-top:${showPreview ? 4 : 0}px">
+                        ${previewHtml}
+                        <div style="flex:1">
+                            <div class="file-path" title="${f.path}">${f.path}</div>
+                            <div class="file-meta">${f.mtime} <span style="margin-left:5px; color:#666; font-size:9px;">${idx === 0 ? '(Keep?)' : ''}</span></div>
+                        </div>
+                    `;
+                    groupDiv.appendChild(row);
+                });
+
+                container.appendChild(groupDiv);
+            });
+
+            updateButtons();
+        }
+
+        function toggleGroup(cb) {
+            const gid = cb.dataset.group;
+            const inputs = document.querySelectorAll(`input.del-check.${gid}`);
+            inputs.forEach(inp => inp.checked = cb.checked);
+            updateButtons();
+        }
+
+        function toggleAll(state) {
+            document.querySelectorAll('.del-check').forEach(inp => inp.checked = state);
+            updateButtons();
+        }
+
+        function invertSelection() {
+            document.querySelectorAll('.del-check').forEach(inp => inp.checked = !inp.checked);
+            updateButtons();
+        }
+
+        function updateButtons() {
+            const count = document.querySelectorAll('.del-check:checked').length;
+            const btn = document.getElementById('btnDelete');
+            btn.disabled = count === 0;
+            btn.textContent = count > 0 ? `Delete Selected (${count})` : 'Delete Selected';
+        }
+
+        function confirmDelete() {
+            const count = document.querySelectorAll('.del-check:checked').length;
+            if (count === 0) return;
+
+            document.getElementById('modalMsg').textContent = `Are you sure you want to permanently delete ${count} files?`;
+            document.getElementById('customModal').classList.remove('hidden');
+        }
+
+        async function closeModal(confirmed) {
+            document.getElementById('customModal').classList.add('hidden');
+            if (confirmed) {
+                await performDelete();
+            }
+        }
+
+        async function performDelete() {
+            const checks = document.querySelectorAll('.del-check:checked');
+            const btn = document.getElementById('btnDelete');
+            btn.disabled = true;
+            setStatus('Deleting...', true);
+
+            let deleted = 0;
+            let errors = 0;
+
+            for (const chk of checks) {
+                const path = chk.value;
+                const fd = new FormData();
+                fd.append('action', 'delete');
+                fd.append('path', path);
+
+                try {
+                    const req = await fetch(API_URL, { method: 'POST', body: fd });
+                    const res = await req.json();
+                    if (res.ok) {
+                        deleted++;
+                        chk.closest('.file-item').style.textDecoration = 'line-through';
+                        chk.closest('.file-item').style.opacity = '0.5';
+                        chk.disabled = true;
+                        chk.checked = false;
+                    } else {
+                        console.error(res.error);
+                        errors++;
+                    }
+                } catch (e) {
+                    console.error(e);
+                    errors++;
+                }
+                if (deleted % 5 === 0) setStatus(`Deleting... ${deleted}/${checks.length}`, true);
+            }
+
+            setStatus(`Deleted ${deleted} files. Errors: ${errors}`, false);
+            btn.disabled = false;
+
+            setTimeout(() => {
+                document.querySelectorAll('.file-item').forEach(el => {
+                    if (el.style.opacity === '0.5') el.remove();
+                });
+                document.querySelectorAll('.group').forEach(g => {
+                    if (g.querySelectorAll('.file-item').length < 2) g.remove();
+                });
+                updateButtons();
+            }, 500);
+        }
+    </script>
+</body>
+
+</html>

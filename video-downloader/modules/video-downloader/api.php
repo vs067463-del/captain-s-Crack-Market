@@ -239,46 +239,61 @@ try {
         ]);
 
     } elseif ($action === 'download') {
-        $formatId = isset($_POST['format']) ? $_POST['format'] : '';
+        $formatId = $_POST['format'] ?? '';
+        $audioOnly = filter_var($_POST['audioOnly'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-        // Output template
-        $outputTemplate = $downloadDir . '\%(title)s.%(ext)s';
+        // Turn off buffering for streaming
+        if (function_exists('apache_setenv')) {
+            @apache_setenv('no-gzip', 1);
+        }
+        @ini_set('zlib.output_compression', 0);
+        @ini_set('implicit_flush', 1);
+        for ($i = 0; $i < ob_get_level(); $i++) {
+            ob_end_flush();
+        }
+        ob_implicit_flush(1);
 
-        // Log command
-        // send_json(['log' => "Starting download for $url to $outputTemplate"]); 
-        // We can't send json and then continue.
+        // We can't use send_json here because we are streaming.
+        // We will output ND-JSON (Newline Delimited JSON).
+        header('Content-Type: application/x-ndjson; charset=utf-8');
 
-        // Prepare command
-        // If formatId is provided, use it. But usually we want formatId+bestaudio
-        // If formatId implies video-only, yt-dlp needs to merge.
-
-        if ($formatId) {
-            // Use specific format + best audio (if strictly video), or just the format
-            // safest is "ID+bestaudio/best" if the ID is video-only.
-            // But if ID is a pre-merged format (like 22), adding +bestaudio might fail or be redundant.
-            // Actually, yt-dlp is smart. "ID+bestaudio/ID" works well.
-            if ($hasFfmpeg) {
-                $format = "$formatId+bestaudio/best";
-            } else {
-                $format = $formatId; // Can't merge without ffmpeg
-            }
-        } else {
-            // Default behavior
-            if ($hasFfmpeg) {
-                $format = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best";
-            } else {
-                $format = "best[ext=mp4]/best";
-            }
+        function stream_msg($data)
+        {
+            echo json_encode($data) . "\n";
+            @flush();
         }
 
-        // The run_yt_dlp_command function already adds --no-check-certificate and --no-playlist
-        // NOTE: escapeshellarg on Windows replaces % with space! We must manually quote the template.
-        $args = "--newline -f " . escapeshellarg($format) . " -o \"" . $outputTemplate . "\" " . escapeshellarg($url);
+        // Output template
+        $extTemplate = $audioOnly ? 'mp3' : '%(ext)s';
+        $outputTemplate = $downloadDir . '\%(title)s.%(ext)s';
 
-        // Force merge to mp4 if ffmpeg is present, finding best compatibility
-        // This fixes the issue where selecting 'mp4' video + 'opus' audio results in MKV
-        if ($hasFfmpeg) {
-            $args .= " --merge-output-format mp4";
+        // Prepare command
+        if ($audioOnly) {
+            // Audio mode
+            // -x --audio-format mp3
+            // Note: format selection is usually ignored or should be bestaudio if we are extracting
+            $format = "bestaudio/best";
+            $args = "--newline -x --audio-format mp3 --audio-quality 0 -o \"" . $outputTemplate . "\" " . escapeshellarg($url);
+        } else {
+            // Video mode
+            if ($formatId) {
+                if ($hasFfmpeg) {
+                    $format = "$formatId+bestaudio/best";
+                } else {
+                    $format = $formatId;
+                }
+            } else {
+                if ($hasFfmpeg) {
+                    $format = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best";
+                } else {
+                    $format = "best[ext=mp4]/best";
+                }
+            }
+            $args = "--newline -f " . escapeshellarg($format) . " -o \"" . $outputTemplate . "\" " . escapeshellarg($url);
+
+            if ($hasFfmpeg) {
+                $args .= " --merge-output-format mp4";
+            }
         }
 
         $cmd = 'chcp 65001 & "' . $binPath . '" --encoding utf-8 --no-check-certificate --no-playlist ' . $args;
@@ -286,74 +301,93 @@ try {
             $cmd .= ' --ffmpeg-location "' . $ffmpegPath . '"';
         }
 
-        // Use proc_open to capture output in real-time? 
-        // For now, let's just run it and return the result. 
-        // If it takes too long, PHP might timeout. 
-        // Ideally we should spawn a background process or stream output.
-        // Given the constraints and previous impl, we run it blocking.
-
-        // We need to capture filename. yt-dlp prints "[download] Destination: ..."
+        // Start process
         $descriptorspec = [
             0 => ["pipe", "r"],
-            1 => ["pipe", "w"],
-            2 => ["pipe", "w"],
+            1 => ["pipe", "w"], // stdout
+            2 => ["pipe", "w"], // stderr
         ];
 
         $process = proc_open($cmd, $descriptorspec, $pipes);
 
-        $stdout_content = "";
-        $stderr_content = "";
         $filename = "";
+        $isDownloading = false;
 
         if (is_resource($process)) {
-            // Read output
+            // Non-blocking read? No, PHP on Windows is tricky with non-blocking pipes.
+            // We will read line by line. stream_get_line is good.
+
+            // Send start event
+            stream_msg(['status' => 'started', 'cmd' => 'Processing...']);
+
             while (!feof($pipes[1])) {
                 $line = fgets($pipes[1]);
-                $stdout_content .= $line;
-                if (strpos($line, '[download] Destination:') !== false) {
-                    // Extract filename
-                    // Line looks like: [download] Destination: ...\VideoDownloads\MyVideo.mp4
-                    $parts = explode('Destination:', $line);
-                    if (count($parts) > 1) {
-                        $filename = trim($parts[1]);
+                if ($line === false)
+                    break;
+
+                $line = trim($line);
+                if (!$line)
+                    continue;
+
+                // Parse progress
+                // format: [download]  23.5% of 10.00MiB at 2.00MiB/s ETA 00:05
+                if (strpos($line, '[download]') !== false) {
+                    if (strpos($line, 'Destination:') !== false) {
+                        $parts = explode('Destination:', $line);
+                        if (count($parts) > 1)
+                            $filename = trim($parts[1]);
+                        stream_msg(['status' => 'info', 'filename' => basename($filename)]);
+                    } elseif (strpos($line, 'has already been downloaded') !== false) {
+                        $parts = explode('[download]', $line);
+                        if (count($parts) > 1) {
+                            $fpart = trim($parts[1]);
+                            $filename = preg_replace('/ has already been downloaded.*/', '', $fpart);
+                            stream_msg(['status' => 'info', 'filename' => basename($filename)]);
+                        }
+                    } elseif (preg_match('/(\d+(?:\.\d+)?)%/', $line, $matches)) {
+                        $percent = floatval($matches[1]);
+                        stream_msg(['status' => 'progress', 'percent' => $percent, 'line' => $line]);
                     }
-                }
-                // Also check "has already been downloaded"
-                if (strpos($line, 'has already been downloaded') !== false) {
-                    $parts = explode('[download]', $line);
-                    if (count($parts) > 1) {
-                        $fpart = trim($parts[1]);
-                        // Cleanup "has already..."
-                        $filename = preg_replace('/ has already been downloaded.*/', '', $fpart);
-                    }
+                } elseif (strpos($line, '[ExtractAudio]') !== false) {
+                    stream_msg(['status' => 'converting', 'msg' => 'Extracting Audio...']);
+                } elseif (strpos($line, '[Merger]') !== false) {
+                    stream_msg(['status' => 'converting', 'msg' => 'Merging formats...']);
+                } elseif (strpos($line, 'ERROR:') !== false) {
+                    stream_msg(['status' => 'error', 'msg' => $line]);
                 }
             }
-            while (!feof($pipes[2])) {
-                $stderr_content .= fgets($pipes[2]);
-            }
+
+            // Read stderr for comprehensive error logging if needed
+            $stderr = stream_get_contents($pipes[2]);
 
             fclose($pipes[0]);
             fclose($pipes[1]);
             fclose($pipes[2]);
 
-            $return_value = proc_close($process);
+            $ret = proc_close($process);
 
-            if ($return_value === 0 || strpos($stdout_content, '100%') !== false) {
-                if (!$filename) {
-                    // Try to guess or find from stdout
-                    // fallback
-                    $filename = "Unknown (check folder)";
+            if ($ret === 0 || $filename) {
+                // If audio extraction happened, filename might have changed extension
+                if ($audioOnly) {
+                    // The registered filename usually has the original ext (e.g. webm) in 'Destination:' 
+                    // but -o was set.
+                    // Actually, with -o template, Destination usually reflects target.
+                    // But let's double check if .mp3 exists.
+                    // If filename ended in .webm, replace with .mp3
+                    $f_mp3 = preg_replace('/\.(webm|m4a|mp4)$/i', '.mp3', $filename);
+                    if (file_exists($f_mp3))
+                        $filename = $f_mp3;
                 }
-                // Clean up filename path
-                $filename = basename($filename);
 
-                send_json(['status' => 'ok', 'filename' => $filename, 'log' => $stdout_content]);
+                stream_msg(['status' => 'finished', 'filename' => basename($filename), 'full_path' => $filename]);
             } else {
-                send_error('Download failed', $stderr_content . "\n" . $stdout_content);
+                stream_msg(['status' => 'error', 'msg' => 'Process exited with code ' . $ret, 'details' => $stderr]);
             }
         } else {
-            send_error('Failed to start download process');
+            stream_msg(['status' => 'error', 'msg' => 'Failed to start process']);
         }
+        exit;
+
     } else {
         send_error('Invalid action');
     }
